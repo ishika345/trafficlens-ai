@@ -1,0 +1,27 @@
+# ML
+ultralytics==8.2.0
+opencv-python==4.9.0.80
+torch>=2.0.0
+shapely==2.0.4
+
+# Backend
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+
+# Database
+sqlalchemy==2.0.30
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Task queue
+celery==5.4.0
+redis==5.0.4
+
+# Frontend
+streamlit==1.35.0
+plotly==5.22.0
+
+# Utilities
+python-dotenv==1.0.1
+pydantic==2.7.1

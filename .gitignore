@@ -1,0 +1,45 @@
+# Secrets — NEVER commit this
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Data files — too large for GitHub
+data/uploads/
+data/snapshots/
+data/test_videos/
+*.mp4
+*.avi
+*.mov
+
+# Model weights — too large for GitHub
+models/*.pt
+*.pt
+*.onnx
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+celery*.log
