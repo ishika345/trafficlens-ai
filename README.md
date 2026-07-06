@@ -1,7 +1,7 @@
 # 🚦 TrafficLens AI
 ### AI-powered CCTV traffic intelligence for Bengaluru
 
-Built for **Gridlock Hackathon 2.0** by Flipkart — a real-time traffic analysis system that processes CCTV footage to classify congestion levels, detect helmet violations, and visualise patterns on a live Bengaluru city map.
+Built a real-time traffic analysis system that processes CCTV footage to classify congestion levels, detect helmet violations, and visualise patterns on a live Bengaluru city map.
 
 ---
 
