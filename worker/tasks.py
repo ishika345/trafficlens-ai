@@ -69,11 +69,12 @@ HELMET_CONF_THRESHOLD   = float(os.getenv("HELMET_CONF",  0.50))
 # ROI polygon — pixel coordinates of the road zone to analyse
 # These are for a typical wide-angle junction camera.
 # Override via env or tune per camera in the cameras table.
-DEFAULT_ROI = [
-    (50,  400),
-    (590, 400),
-    (640, 720),
-    (0,   720),
+# ROI as PERCENTAGES of frame width/height — works for any video resolution
+DEFAULT_ROI_RELATIVE = [
+    (0.0, 0.0),
+    (1.0, 0.0),
+    (1.0, 1.0),
+    (0.0, 1.0),
 ]
 
 logging.basicConfig(level=logging.INFO)
@@ -234,51 +235,38 @@ def detect_helmet_violations(
     timestamp_sec: float,
 ) -> list:
     """
-    For every motorcycle in the frame, crop the rider region and
-    run the helmet classifier on it.
-
-    Returns a list of violation dicts for any "no_helmet" detections.
+    Run the helmet model directly on the FULL frame — it was trained to
+    detect heads/helmets in complete traffic scenes, not pre-cropped
+    motorcycle regions. No cropping needed.
     """
     if helmet_model is None:
         return []
 
     violations = []
 
-    for det in vehicle_boxes:
-        if det["class"] != "motorcycle":
-            continue
+    helmet_results = helmet_model(frame, verbose=False)[0]
 
-        x1, y1, x2, y2 = det["bbox"]
 
-        # Crop the upper portion of the motorcycle box — that's where the rider's
-        # head is. Using the top 60% of the bounding box height.
-        crop_y2   = y1 + int((y2 - y1) * 0.6)
-        crop      = frame[max(0, y1):crop_y2, max(0, x1):x2]
+    for hbox in helmet_results.boxes:
+        cls_name = helmet_model.names[int(hbox.cls)]
+        conf     = float(hbox.conf)
 
-        if crop.size == 0:
-            continue
+        if cls_name == "Without Helmet" and conf >= HELMET_CONF_THRESHOLD:
+            x1, y1, x2, y2 = map(int, hbox.xyxy[0].tolist())
 
-        helmet_results = helmet_model(crop, verbose=False)[0]
+            snapshot_path = _save_snapshot(
+                frame, job_id, frame_number, "no_helmet",
+                bbox=[x1, y1, x2, y2]
+            )
 
-        for hbox in helmet_results.boxes:
-            cls_name = helmet_model.names[int(hbox.cls)]
-            conf     = float(hbox.conf)
-
-            if cls_name == "no_helmet" and conf >= HELMET_CONF_THRESHOLD:
-                # Save a snapshot of the violation frame
-                snapshot_path = _save_snapshot(
-                    frame, job_id, frame_number, "no_helmet",
-                    bbox=[x1, y1, x2, y2]
-                )
-
-                violations.append({
-                    "violation_type": "no_helmet",
-                    "confidence":     round(conf, 4),
-                    "frame_number":   frame_number,
-                    "timestamp_sec":  round(timestamp_sec, 2),
-                    "snapshot_path":  snapshot_path,
-                    "bbox":           [x1, y1, x2, y2],
-                })
+            violations.append({
+                "violation_type": "no_helmet",
+                "confidence":     round(conf, 4),
+                "frame_number":   frame_number,
+                "timestamp_sec":  round(timestamp_sec, 2),
+                "snapshot_path":  snapshot_path,
+                "bbox":           [x1, y1, x2, y2],
+            })
 
     return violations
 
@@ -352,7 +340,7 @@ def process_video(self, job_id: str, video_path: str, roi_points: list = None):
     """
     db         = SessionLocal()
     classifier = CongestionClassifier()
-    roi        = roi_points or DEFAULT_ROI
+    
 
     logger.info(f"[{job_id[:8]}] Starting pipeline for {video_path}")
 
@@ -379,8 +367,12 @@ def process_video(self, job_id: str, video_path: str, roi_points: list = None):
         if not ret:
             raise ValueError("Could not read first frame from video.")
 
+         # Convert relative ROI to actual pixel coordinates based on real frame size
+        h, w = first_frame.shape[:2]
+        roi_relative = roi_points or DEFAULT_ROI_RELATIVE
+        roi = [(int(x * w), int(y * h)) for x, y in roi_relative]
+
         roi_mask = build_roi_mask(first_frame.shape, roi)
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # rewind to start
 
         # ── 4. Frame loop ─────────────────────────────────────────────────
         frame_number    = 0
@@ -448,14 +440,16 @@ def process_video(self, job_id: str, video_path: str, roi_points: list = None):
             analysed_frames += 1
 
             # Log progress every 100 analysed frames
-            if analysed_frames % 100 == 0:
-                pct = (frame_number / total_frames * 100) if total_frames else 0
-                logger.info(
-                    f"[{job_id[:8]}] {pct:.0f}% — "
-                    f"frame {frame_number}/{total_frames}, "
-                    f"level: {congestion['level']}, "
-                    f"violations so far: {total_violations}"
-                )
+            # TEMPORARY DEBUG — log every analysed frame
+            pct = (frame_number / total_frames * 100) if total_frames else 0
+            logger.info(
+                f"[{job_id[:8]}] {pct:.0f}% — "
+                f"frame {frame_number}/{total_frames}, "
+                f"raw_count: {vehicle_count}, "
+                f"classes: {[d['class'] for d in raw_boxes]}, "
+                f"level: {congestion['level']}, "
+                f"violations so far: {total_violations}"
+            )
 
         # ── 5. Flush any remaining detections ────────────────────────────
         _flush_detections(db, detection_batch)
@@ -517,7 +511,7 @@ def export_annotated_video(job_id: str, video_path: str, roi_points: list = None
     Output is saved to SNAPSHOT_DIR/{job_id}_annotated.mp4
     This is a nice-to-have — run it after process_video for demo purposes.
     """
-    roi  = roi_points or DEFAULT_ROI
+    roi_relative = roi_points or DEFAULT_ROI_RELATIVE
     cap  = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         logger.error(f"Cannot open {video_path} for annotation")

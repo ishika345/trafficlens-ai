@@ -8,7 +8,14 @@ DATABASE_URL = os.getenv(
     "postgresql://postgres:password@localhost:5432/trafficlens"
 )
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=30,
+    pool_recycle=300,
+    pool_timeout=60,
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
